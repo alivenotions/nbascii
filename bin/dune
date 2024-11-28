@@ -1,0 +1,4 @@
+(executable
+ (public_name nbascii)
+ (name main)
+ (libraries nbascii))
