@@ -79,9 +79,66 @@ let test_server env =
   check "server 500" (String.starts_with ~prefix:"HTTP/1.1 500" (fetch "/boom"));
   check "server 404" (String.starts_with ~prefix:"HTTP/1.1 404" (fetch "/missing"))
 
+let test_scoreboard () =
+  let json = In_channel.with_open_bin "scoreboard.json" In_channel.input_all in
+  let board = Nbascii.Scoreboard.of_string json in
+  check "date" (board.date = "2026-10-30");
+  match board.games with
+  | [ final; live; scheduled ] ->
+      check "final status" (final.status = Final && final.status_text = "Final/OT");
+      check "final overtime periods" (List.length final.home.periods = 5);
+      check "live score" (live.status = Live && live.away.score = 80 && live.period = 3);
+      check "scheduled null score" (scheduled.status = Scheduled && scheduled.home.score = 0);
+      let text = Nbascii.Render.scoreboard board in
+      let lines = String.split_on_char '\n' text in
+      check "heading" (List.hd lines = "NBA SCORES  2026-10-30");
+      check "winner marked" (List.mem "| CLE     3-1  28  30  25  22  13   118 < |" lines);
+      check "overtime column" (List.exists (fun l -> String.ends_with ~suffix:"  OT     T   |" l) lines);
+      check "live shows played periods only" (List.mem "| BOS     4-0  30  27  23    80 |" lines);
+      check "scheduled" (List.mem "| 10:00 pm ET       |" lines);
+      let rectangular box =
+        List.for_all (fun l -> String.length l = String.length (List.hd box)) box
+      in
+      check "boxes are rectangular"
+        (List.for_all (fun g -> rectangular (Nbascii.Render.game g)) board.games)
+  | _ -> failwith "FAIL: expected three games"
+
+let test_scoreboard_errors () =
+  let fails s = match Nbascii.Scoreboard.of_string s with _ -> false | exception Failure _ -> true in
+  check "invalid json" (fails "{");
+  check "wrong shape" (fails {|{"scoreboard": {"games": [{"gameStatus": "x"}]}}|});
+  check "empty day" ((Nbascii.Scoreboard.of_string {|{"scoreboard": {"gameDate": "2026-07-01", "games": []}}|}).games = []);
+  check "empty render"
+    (Nbascii.Render.scoreboard { date = "2026-07-01"; games = [] } = "NBA SCORES  2026-07-01\n\nNo games today.")
+
+let test_cache () =
+  Eio_mock.Backend.run @@ fun () ->
+  let clock = Eio_mock.Clock.make () in
+  let calls = ref 0 and fail = ref false in
+  let cache =
+    Nbascii.Cache.create ~clock ~ttl:20.0 (fun () ->
+        incr calls;
+        if !fail then failwith "upstream down";
+        !calls)
+  in
+  check "first fetch" (Nbascii.Cache.get cache = 1);
+  check "cached" (Nbascii.Cache.get cache = 1 && !calls = 1);
+  Eio_mock.Clock.set_time clock 21.0;
+  check "refetched after ttl" (Nbascii.Cache.get cache = 2);
+  fail := true;
+  Eio_mock.Clock.set_time clock 42.0;
+  check "stale on error" (Nbascii.Cache.get cache = 2 && !calls = 3);
+  check "still usable after error" (Nbascii.Cache.get cache = 2 && !calls = 4);
+  let empty = Nbascii.Cache.create ~clock ~ttl:20.0 (fun () -> failwith "down") in
+  check "error without value"
+    (match Nbascii.Cache.get empty with _ -> false | exception Failure _ -> true)
+
 let () =
   Logs.set_level None;
   test_router ();
+  test_scoreboard_errors ();
+  test_cache ();
+  test_scoreboard ();
   Eio_main.run @@ fun env ->
   test_static env;
   test_server env;

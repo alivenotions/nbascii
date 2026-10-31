@@ -1,2 +1,3 @@
 (library
- (name nbascii))
+ (name nbascii)
+ (libraries eio cohttp-eio http uri tls tls-eio ca-certs domain-name yojson logs))

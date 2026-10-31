@@ -1,3 +1,4 @@
 (test
  (name test_nbascii)
- (libraries dream_eio eio_main))
+ (libraries nbascii dream_eio eio_main eio.mock)
+ (deps scoreboard.json))

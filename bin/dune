@@ -1,4 +1,4 @@
 (executable
  (public_name nbascii)
  (name main)
- (libraries nbascii dream_eio eio_main pure-html))
+ (libraries nbascii dream_eio eio_main pure-html mirage-crypto-rng.unix logs))
