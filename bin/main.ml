@@ -1,5 +1,7 @@
+module Dream = Dream_eio
+
 let greet who =
-  let open Dream_html in
+  let open Pure_html in
   let open HTML in
   html [lang "en"] [
     head [] [
@@ -15,11 +17,17 @@ let greet who =
     ];
   ]
 
+let respond_html node = Dream.html (Pure_html.to_string node)
+
 let () =
-  Dream.run
-  @@ Dream.logger
+  Dream.setup_log ();
+  Eio_main.run @@ fun env ->
+  let clock = Eio.Stdenv.clock env in
+  let static = Eio.Path.(Eio.Stdenv.cwd env / "static") in
+  Dream.run ~net:(Eio.Stdenv.net env)
+  @@ Dream.logger ~clock
   @@ Dream.router [
     Dream.get "/"
-      (fun _ -> Dream_html.respond (greet "world"));
-    Dream.get "/static/**" (Dream.static "./static");
+      (fun _ -> respond_html (greet "world"));
+    Dream.get "/static/**" (Dream.static static);
   ]

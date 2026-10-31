@@ -1,5 +1,4 @@
 (executable
  (public_name nbascii)
  (name main)
- (libraries nbascii dream dream-html cohttp-lwt-unix)
- (preprocess (pps lwt_ppx)))
+ (libraries nbascii dream_eio eio_main pure-html))
