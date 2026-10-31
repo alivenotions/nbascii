@@ -1,4 +1,4 @@
-(lang dune 3.17)
+(lang dune 3.24)
 
 (name nbascii)
 
@@ -17,11 +17,17 @@
  (description "hopefully this will be a quick way to get nba scores")
  (depends
   (ocaml
-    (>= 5.2.1))
+   (>= 5.5.2))
+  (dune
+   (>= 3.24.2))
+  (dream
+   (>= 1.0.0))
   (dream-html
-    (>= 3.3.1))
-  dream
-  cohttp-lwt-unix)
+   (>= 4.0.0))
+  (cohttp-lwt-unix
+   (>= 6.3.0))
+  (lwt_ppx
+   (>= 6.1.0)))
  (tags
   ()))
 
