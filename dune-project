@@ -35,7 +35,17 @@
   (logs
    (>= 0.10.0))
   (pure-html
-   (>= 4.0.0)))
+   (>= 4.0.0))
+  (tls-eio
+   (>= 2.1.4))
+  (ca-certs
+   (>= 1.0.3))
+  (mirage-crypto-rng
+   (>= 2.4.1))
+  (domain-name
+   (>= 0.4.0))
+  (yojson
+   (>= 3.0.0)))
  (tags
   ()))
 
