@@ -1,0 +1,3 @@
+(library
+ (name dream_eio)
+ (libraries eio cohttp-eio http uri magic-mime logs logs.fmt))
