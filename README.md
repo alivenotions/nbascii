@@ -19,6 +19,9 @@ dune exec nbascii    # http://localhost:8080
 dune test
 ```
 
+`nbascii.opam` is generated from `dune-project`. After changing dependencies,
+run `dune build @opam && dune promote` and commit the result.
+
 Scores come from NBA's public live data feed
 (`cdn.nba.com/.../todaysScoreboard_00.json`), cached for 20 seconds. It only
 covers today's games, and it's undocumented, so it can change without notice.

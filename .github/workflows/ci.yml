@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.5"
+          dune-cache: true
+
+      - name: Install dependencies
+        run: opam install . --deps-only --with-test
+
+      - name: Build
+        run: opam exec -- dune build
+
+      # Also fails if nbascii.opam is out of date with dune-project.
+      - name: Test
+        run: opam exec -- dune test
+
+      # Checks the app against the real NBA feed. Doesn't fail the build,
+      # since the feed is outside our control.
+      - name: Smoke test against live NBA feed
+        continue-on-error: true
+        run: |
+          ./_build/default/bin/main.exe > server.log 2>&1 &
+          for _ in $(seq 30); do
+            curl -sf -o /dev/null http://localhost:8080/static/main.css && break
+            sleep 1
+          done
+          status=$(curl -sS -o page.html -w '%{http_code}' http://localhost:8080/)
+          cat page.html; echo; cat server.log
+          if [ "$status" != 200 ] || ! grep -q "NBA SCORES" page.html; then
+            echo "::warning::Live scoreboard check failed (HTTP $status)"
+            exit 1
+          fi
