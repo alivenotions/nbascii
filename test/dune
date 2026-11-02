@@ -1,4 +1,17 @@
 (test
  (name test_nbascii)
+ (modules test_nbascii)
  (libraries nbascii dream_eio eio_main eio.mock)
  (deps scoreboard.json))
+
+(test
+ (name test_feeds)
+ (modules test_feeds)
+ (libraries nbascii uri yojson)
+ (deps scoreboard.json standings.json leaders.json))
+
+(test
+ (name test_page)
+ (modules test_page)
+ (libraries nbascii nbascii_web pure-html)
+ (deps scoreboard.json standings.json leaders.json))

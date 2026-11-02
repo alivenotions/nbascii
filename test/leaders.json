@@ -1,0 +1,16 @@
+{
+  "requestedSeason": {"displayName": "2026-27"},
+  "leaders": {"categories": [
+    {"name": "assistsPerGame", "displayName": "Assists Per Game", "abbreviation": "AST", "leaders": [
+      {"athlete": {"displayName": "Trae Young"}, "team": {"abbreviation": "ATL"}, "displayValue": "11.5"}
+    ]},
+    {"name": "pointsPerGame", "displayName": "Points Per Game", "abbreviation": "PTS", "leaders": [
+      {"athlete": {"displayName": "Luka Doncic"}, "team": {"abbreviation": "LAL"}, "displayValue": "36.2"},
+      {"athlete": {"displayName": "Stephen Curry"}, "team": {"abbreviation": "GS"}, "displayValue": "32.0"}
+    ]},
+    {"name": "reboundsPerGame", "displayName": "Rebounds Per Game", "abbreviation": "REB", "leaders": [
+      {"athlete": {"displayName": "Nikola Jokic"}, "team": {"abbreviation": "DEN"}, "displayValue": "14.0"}
+    ]},
+    {"name": "stealsPerGame", "displayName": "Steals Per Game", "abbreviation": "STL", "leaders": []}
+  ]}
+}

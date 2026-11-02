@@ -31,11 +31,15 @@ let field name json =
   | `Assoc fields -> Option.value (List.assoc_opt name fields) ~default:`Null
   | _ -> fail "Scoreboard: expected an object around %S" name
 
-(* The feed sends [null] or omits numbers for games that haven't started. *)
+(* ESPN uses strings for totals and numbers for per-period scores. *)
 let int name json =
   match field name json with
   | `Int n -> n
   | `Float f -> int_of_float f
+  | `String s -> (
+      match int_of_string_opt s with
+      | Some n -> n
+      | None -> fail "Scoreboard: %S is not a number" name)
   | `Null -> 0
   | _ -> fail "Scoreboard: %S is not a number" name
 
@@ -51,38 +55,71 @@ let list name json =
   | `Null -> []
   | _ -> fail "Scoreboard: %S is not a list" name
 
-let status_of_int = function
-  | 1 -> Scheduled
-  | 2 -> Live
-  | 3 -> Final
-  | n -> fail "Scoreboard: unknown gameStatus %d" n
+let status_of_state = function
+  | "pre" -> Scheduled
+  | "in" -> Live
+  | "post" -> Final
+  | s -> fail "Scoreboard: unknown game state %S" s
 
-let team json =
+let record json =
+  match List.find_opt (fun r -> string "type" r = "total") (list "records" json) with
+  | None -> (0, 0)
+  | Some r -> (
+      match String.split_on_char '-' (string "summary" r) with
+      | [ wins; losses ] -> (
+          match (int_of_string_opt wins, int_of_string_opt losses) with
+          | Some w, Some l -> (w, l)
+          | _ -> fail "Scoreboard: invalid team record")
+      | _ -> fail "Scoreboard: invalid team record")
+
+let team competitor =
+  let json = field "team" competitor in
+  let wins, losses = record competitor in
   {
-    tricode = string "teamTricode" json;
-    city = string "teamCity" json;
-    name = string "teamName" json;
-    wins = int "wins" json;
-    losses = int "losses" json;
-    score = int "score" json;
-    periods = List.map (int "score") (list "periods" json);
+    tricode = Espn_json.tricode (string "abbreviation" json);
+    city = string "location" json;
+    name = string "name" json;
+    wins;
+    losses;
+    score = int "score" competitor;
+    periods = List.map (int "value") (list "linescores" competitor);
   }
 
 let game json =
+  let status = field "status" json in
+  let status_type = field "type" status in
+  let state = status_of_state (string "state" status_type) in
+  let competition =
+    match list "competitions" json with
+    | [ c ] -> c
+    | _ -> fail "Scoreboard: expected one competition per NBA game"
+  in
+  let competitors = list "competitors" competition in
+  let side side =
+    match List.filter (fun c -> string "homeAway" c = side) competitors with
+    | [ c ] -> team c
+    | _ -> fail "Scoreboard: expected one %s team" side
+  in
   {
-    id = string "gameId" json;
-    status = status_of_int (int "gameStatus" json);
-    status_text = String.trim (string "gameStatusText" json);
-    period = int "period" json;
-    home = team (field "homeTeam" json);
-    away = team (field "awayTeam" json);
+    id = string "id" json;
+    status = state;
+    status_text = String.trim (string "shortDetail" status_type);
+    period = int "period" status;
+    home = side "home";
+    away = side "away";
   }
 
-let of_json json =
-  let board = field "scoreboard" json in
-  { date = string "gameDate" board; games = List.map game (list "games" board) }
+let of_json ?date json =
+  let date = match date with Some d -> d | None -> string "date" (field "day" json) in
+  if date = "" then fail "Scoreboard: missing scoreboard date";
+  let events =
+    match field "events" json with
+    | `List events -> events
+    | _ -> fail "Scoreboard: expected an events list"
+  in
+  { date; games = List.map game events }
 
-let of_string s =
+let of_string ?date s =
   match Yojson.Safe.from_string s with
-  | json -> of_json json
+  | json -> of_json ?date json
   | exception Yojson.Json_error msg -> fail "Scoreboard: invalid JSON: %s" msg

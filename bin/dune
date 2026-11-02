@@ -1,4 +1,10 @@
 (executable
  (public_name nbascii)
  (name main)
- (libraries nbascii dream_eio eio_main pure-html mirage-crypto-rng.unix logs))
+ (modules main)
+ (libraries nbascii nbascii_web dream_eio eio_main pure-html mirage-crypto-rng.unix logs))
+
+(library
+ (name nbascii_web)
+ (modules page)
+ (libraries nbascii pure-html))

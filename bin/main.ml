@@ -1,33 +1,19 @@
 module Dream = Dream_eio
 
-let page text =
-  let open Pure_html in
-  let open HTML in
-  html [lang "en"] [
-    head [] [
-      meta [charset "utf-8"];
-      meta [name "viewport"; content "width=device-width, initial-scale=1"];
-      title [] "nbascii";
-      link [rel "stylesheet"; href "static/main.css"];
-      link [rel "preconnect"; href "https://fonts.googleapis.com"; ] ;
-      link [rel "preconnect"; href "https://fonts.gstatic.com"; crossorigin `anonymous; ] ;
-      link [href "https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&display=swap"; rel "stylesheet"; ] ;
-    ];
-    body [] [
-      pre [] [txt "%s" text];
-    ];
-  ]
+let page = Nbascii_web.Page.render
 
 let respond_html ?status node = Dream.html ?status (Pure_html.to_string node)
 
-let scores cache _req =
+let cached_page ~label ~render cache req =
+  let path = "/" ^ String.concat "/" (Dream.path req) in
+  let page = page ~path in
   match Nbascii.Cache.get cache with
-  | board -> respond_html (page (Nbascii.Render.scoreboard board))
+  | data -> respond_html (Nbascii_web.Page.render_document ~path (render data))
   | exception (Eio.Cancel.Cancelled _ as exn) -> raise exn
   | exception exn ->
-      Logs.err (fun m -> m "Fetching scores failed: %s" (Printexc.to_string exn));
+      Logs.err (fun m -> m "Fetching %s failed: %s" label (Printexc.to_string exn));
       respond_html ~status:`Service_unavailable
-        (page "Couldn't load today's scores. Try again in a moment.")
+        (page (Printf.sprintf "Couldn't load %s. Try again in a moment." label))
 
 let () =
   Dream.setup_log ();
@@ -41,9 +27,24 @@ let () =
     Nbascii.Cache.create ~clock ~ttl:20.0 (fun () ->
         Nbascii.Nba_api.todays_scoreboard client ~clock)
   in
+  let yesterday =
+    Nbascii.Cache.create ~clock ~ttl:20.0 (fun () ->
+      let today = Nbascii.Cache.get cache in
+      let date = Nbascii.Score_date.previous today.date in
+      Nbascii.Nba_api.scoreboard_on client ~clock ~date)
+  in
+  let standings =
+    Nbascii.Cache.create ~clock ~ttl:300.0 (fun () -> Nbascii.Nba_api.standings client ~clock)
+  in
+  let leaders =
+    Nbascii.Cache.create ~clock ~ttl:300.0 (fun () -> Nbascii.Nba_api.leaders client ~clock)
+  in
   Dream.run ~net
   @@ Dream.logger ~clock
   @@ Dream.router [
-    Dream.get "/" (scores cache);
+    Dream.get "/" (cached_page ~label:"today's scores" ~render:Nbascii.Render.scoreboard_document cache);
+    Dream.get "/yesterday" (cached_page ~label:"yesterday's scores" ~render:Nbascii.Render.scoreboard_document yesterday);
+    Dream.get "/standings" (cached_page ~label:"standings" ~render:Nbascii.Render.standings_document standings);
+    Dream.get "/stats" (cached_page ~label:"season leaders" ~render:Nbascii.Render.leaders_document leaders);
     Dream.get "/static/**" (Dream.static static);
   ]

@@ -1,0 +1,39 @@
+{
+  "season": {"displayName": "2026-27"},
+  "children": [
+    {
+      "name": "Eastern Conference",
+      "standings": {"entries": [
+        {"team": {"abbreviation": "NY"}, "stats": [
+          {"name": "playoffSeed", "value": 2.0},
+          {"name": "wins", "displayValue": "3"},
+          {"name": "losses", "displayValue": "1"},
+          {"name": "winPercent", "displayValue": ".750"},
+          {"name": "gamesBehind", "displayValue": "1"},
+          {"name": "streak", "displayValue": "W2"}
+        ]},
+        {"team": {"abbreviation": "BOS"}, "stats": [
+          {"name": "playoffSeed", "value": 1},
+          {"name": "wins", "displayValue": "4"},
+          {"name": "losses", "displayValue": "0"},
+          {"name": "winPercent", "displayValue": "1.000"},
+          {"name": "gamesBehind", "displayValue": "-"},
+          {"name": "streak", "displayValue": "W4"}
+        ]}
+      ]}
+    },
+    {
+      "name": "Western Conference",
+      "standings": {"entries": [
+        {"team": {"abbreviation": "GS"}, "stats": [
+          {"name": "playoffSeed", "value": 1.0},
+          {"name": "wins", "displayValue": "4"},
+          {"name": "losses", "displayValue": "1"},
+          {"name": "winPercent", "displayValue": ".800"},
+          {"name": "gamesBehind", "displayValue": "-"},
+          {"name": "streak", "displayValue": "L1"}
+        ]}
+      ]}
+    }
+  ]
+}

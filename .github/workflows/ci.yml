@@ -30,9 +30,9 @@ jobs:
       - name: Test
         run: opam exec -- dune test
 
-      # Checks the app against the real NBA feed. Doesn't fail the build,
+      # Checks the app against the real ESPN feed. Doesn't fail the build,
       # since the feed is outside our control.
-      - name: Smoke test against live NBA feed
+      - name: Smoke test against live ESPN feed
         continue-on-error: true
         run: |
           ./_build/default/bin/main.exe > server.log 2>&1 &
@@ -40,9 +40,19 @@ jobs:
             curl -sf -o /dev/null http://localhost:8080/static/main.css && break
             sleep 1
           done
-          status=$(curl -sS -o page.html -w '%{http_code}' http://localhost:8080/)
-          cat page.html; echo; cat server.log
-          if [ "$status" != 200 ] || ! grep -q "NBA SCORES" page.html; then
-            echo "::warning::Live scoreboard check failed (HTTP $status)"
-            exit 1
-          fi
+          trap 'kill $(jobs -p) 2>/dev/null || true' EXIT
+          for path in / /yesterday /standings /stats; do
+            case "$path" in
+              /standings) heading="NBA STANDINGS" ;;
+              /stats) heading="NBA SEASON LEADERS" ;;
+              *) heading="NBA SCORES" ;;
+            esac
+            status=$(curl --max-time 30 -sS -o page.html -w '%{http_code}' "http://localhost:8080$path")
+            cat page.html; echo
+            if [ "$status" != 200 ] || ! grep -q "$heading" page.html; then
+              cat server.log
+              echo "::warning::Live $path check failed (HTTP $status)"
+              exit 1
+            fi
+          done
+          cat server.log

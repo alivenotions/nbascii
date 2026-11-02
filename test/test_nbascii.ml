@@ -92,24 +92,68 @@ let test_scoreboard () =
       let text = Nbascii.Render.scoreboard board in
       let lines = String.split_on_char '\n' text in
       check "heading" (List.hd lines = "NBA SCORES  2026-10-30");
-      check "winner marked" (List.mem "| CLE     3-1  28  30  25  22  13   118 < |" lines);
-      check "overtime column" (List.exists (fun l -> String.ends_with ~suffix:"  OT     T   |" l) lines);
-      check "live shows played periods only" (List.mem "| BOS     4-0  30  27  23    80 |" lines);
-      check "scheduled" (List.mem "| 10:00 pm ET       |" lines);
-      let rectangular box =
-        List.for_all (fun l -> String.length l = String.length (List.hd box)) box
-      in
-      check "boxes are rectangular"
-        (List.for_all (fun g -> rectangular (Nbascii.Render.game g)) board.games)
+      check "winner marked" (List.mem "CLE    3-1 28 30 25 22 13  118 <" lines);
+      check "overtime column" (List.mem "TEAM   W-L  1  2  3  4 OT  TOT" lines);
+      check "live shows played periods only" (List.mem "BOS    4-0 30 27 23   80" lines);
+      check "live label remains without color" (List.mem "LIVE  5:21 - 3rd" lines);
+      check "scheduled" (scheduled.status_text = "10/30 - 10:00 PM EDT");
+      check "ESPN abbreviations" (final.away.tricode = "NYK" && scheduled.home.tricode = "GSW");
+      check "home and away independent of feed order" (final.home.tricode = "CLE" && live.home.tricode = "LAL");
+      check "team metadata" (live.away.city = "Boston" && live.away.name = "Celtics");
+      check "live status text" (live.status_text = "5:21 - 3rd");
+      check "no repeated boxes" (not (List.exists (String.starts_with ~prefix:"+") lines));
+      check "scheduled game is compact" (List.length (Nbascii.Render.game scheduled) = 3);
+      check "compact final width"
+        (List.for_all (fun line -> String.length line <= 32) (Nbascii.Render.game final));
+      let columns = List.nth (Nbascii.Render.game final) 1 in
+      check "totals aligned with heading"
+        (String.sub columns 27 3 = "TOT"
+         && String.sub (List.nth (Nbascii.Render.game final) 3) 27 3 = "118")
   | _ -> failwith "FAIL: expected three games"
 
 let test_scoreboard_errors () =
   let fails s = match Nbascii.Scoreboard.of_string s with _ -> false | exception Failure _ -> true in
   check "invalid json" (fails "{");
-  check "wrong shape" (fails {|{"scoreboard": {"games": [{"gameStatus": "x"}]}}|});
-  check "empty day" ((Nbascii.Scoreboard.of_string {|{"scoreboard": {"gameDate": "2026-07-01", "games": []}}|}).games = []);
+  check "wrong shape" (fails {|{"error": "upstream unavailable"}|});
+  check "missing events" (fails {|{"day": {"date": "2026-07-01"}}|});
+  check "invalid events" (fails {|{"day": {"date": "2026-07-01"}, "events": {}}|});
+  check "missing date" (fails {|{"day": {}, "events": []}|});
+  check "missing competition" (fails {|{"day": {"date": "2026-07-01"}, "events": [{"status": {"type": {"state": "pre"}}, "competitions": []}]}|});
+  check "unknown state" (fails {|{"day": {"date": "2026-07-01"}, "events": [{"status": {"type": {"state": "unknown"}}}]}|});
+  check "empty day" ((Nbascii.Scoreboard.of_string {|{"day": {"date": "2026-07-01"}, "events": []}|}).games = []);
   check "empty render"
     (Nbascii.Render.scoreboard { date = "2026-07-01"; games = [] } = "NBA SCORES  2026-07-01\n\nNo games today.")
+
+let test_espn_edge_cases () =
+  let team side extra =
+    `Assoc ([ ("homeAway", `String side);
+              ("team", `Assoc [ ("abbreviation", `String "BOS") ]) ] @ extra)
+  in
+  let board competitors =
+    `Assoc [ ("day", `Assoc [ ("date", `String "2026-10-30") ]);
+             ("events", `List [ `Assoc [
+               ("id", `String "1");
+               ("status", `Assoc [ ("type", `Assoc [ ("state", `String "pre");
+                                                         ("shortDetail", `String "Postponed") ]) ]);
+               ("competitions", `List [ `Assoc [ ("competitors", `List competitors) ] ]) ] ]) ]
+  in
+  let fails json =
+    match Nbascii.Scoreboard.of_json json with
+    | _ -> false
+    | exception Failure _ -> true
+  in
+  let home = team "home" [] and away = team "away" [] in
+  let parsed = Nbascii.Scoreboard.of_json (board [home; away]) in
+  let game = List.hd parsed.games in
+  check "missing optional team data"
+    (game.home.wins = 0 && game.home.losses = 0 && game.home.score = 0 && game.home.periods = []);
+  check "preserve postponed status" (game.status = Scheduled && game.status_text = "Postponed");
+  check "missing away team" (fails (board [home]));
+  check "duplicate home team" (fails (board [home; home; away]));
+  check "invalid score string" (fails (board [team "home" [("score", `String "bad")]; away]));
+  check "invalid record"
+    (fails (board [team "home" [("records", `List [ `Assoc [
+      ("type", `String "total"); ("summary", `String "bad") ] ])]; away]))
 
 let test_cache () =
   Eio_mock.Backend.run @@ fun () ->
@@ -137,6 +181,7 @@ let () =
   Logs.set_level None;
   test_router ();
   test_scoreboard_errors ();
+  test_espn_edge_cases ();
   test_cache ();
   test_scoreboard ();
   Eio_main.run @@ fun env ->

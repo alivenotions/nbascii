@@ -1,14 +1,21 @@
 type client = Cohttp_eio.Client.t
 
 let scoreboard_url =
-  Uri.of_string "https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json"
+  Uri.of_string "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
 
-(* The CDN may reject requests that don't look like they come from nba.com. *)
+let standings_url =
+  Uri.of_string "https://site.api.espn.com/apis/v2/sports/basketball/nba/standings"
+
+let leaders_url =
+  Uri.of_string "https://site.api.espn.com/apis/site/v3/sports/basketball/nba/leaders"
+
+let scoreboard_url_for_date date =
+  Uri.add_query_param' scoreboard_url ("dates", Score_date.espn_query date)
+
 let headers =
   Http.Header.of_list
     [
-      ("user-agent", "Mozilla/5.0 (compatible; nbascii)");
-      ("referer", "https://www.nba.com/");
+      ("user-agent", "nbascii");
       ("accept", "application/json");
     ]
 
@@ -43,3 +50,16 @@ let get_string client uri =
 let todays_scoreboard client ~clock =
   Eio.Time.with_timeout_exn clock 10.0 (fun () -> get_string client scoreboard_url)
   |> Scoreboard.of_string
+
+let scoreboard_on client ~clock ~date =
+  let url = scoreboard_url_for_date date in
+  Eio.Time.with_timeout_exn clock 10.0 (fun () -> get_string client url)
+  |> Scoreboard.of_string ~date
+
+let standings client ~clock =
+  Eio.Time.with_timeout_exn clock 10.0 (fun () -> get_string client standings_url)
+  |> Standings.of_string
+
+let leaders client ~clock =
+  Eio.Time.with_timeout_exn clock 10.0 (fun () -> get_string client leaders_url)
+  |> Leaders.of_string

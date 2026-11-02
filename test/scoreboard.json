@@ -1,39 +1,39 @@
 {
-  "meta": { "version": 1, "code": 200 },
-  "scoreboard": {
-    "gameDate": "2026-10-30",
-    "leagueId": "00",
-    "games": [
-      {
-        "gameId": "0022600101", "gameStatus": 3, "gameStatusText": "Final/OT ",
-        "period": 5, "gameClock": "",
-        "homeTeam": { "teamTricode": "CLE", "teamCity": "Cleveland", "teamName": "Cavaliers",
-          "wins": 3, "losses": 1, "score": 118,
-          "periods": [ {"period":1,"score":28}, {"period":2,"score":30}, {"period":3,"score":25},
-                       {"period":4,"score":22}, {"period":5,"score":13} ] },
-        "awayTeam": { "teamTricode": "NYK", "teamCity": "New York", "teamName": "Knicks",
-          "wins": 2, "losses": 2, "score": 112,
-          "periods": [ {"period":1,"score":25}, {"period":2,"score":31}, {"period":3,"score":27},
-                       {"period":4,"score":22}, {"period":5,"score":7} ] }
-      },
-      {
-        "gameId": "0022600102", "gameStatus": 2, "gameStatusText": "Q3 5:21",
-        "period": 3, "gameClock": "PT05M21.00S",
-        "homeTeam": { "teamTricode": "LAL", "teamCity": "Los Angeles", "teamName": "Lakers",
-          "wins": 1, "losses": 3, "score": 71,
-          "periods": [ {"period":1,"score":24}, {"period":2,"score":29}, {"period":3,"score":18}, {"period":4,"score":0} ] },
-        "awayTeam": { "teamTricode": "BOS", "teamCity": "Boston", "teamName": "Celtics",
-          "wins": 4, "losses": 0, "score": 80,
-          "periods": [ {"period":1,"score":30}, {"period":2,"score":27}, {"period":3,"score":23}, {"period":4,"score":0} ] }
-      },
-      {
-        "gameId": "0022600103", "gameStatus": 1, "gameStatusText": "10:00 pm ET",
-        "period": 0, "gameClock": "",
-        "homeTeam": { "teamTricode": "GSW", "teamCity": "Golden State", "teamName": "Warriors",
-          "wins": 2, "losses": 1, "score": null, "periods": [] },
-        "awayTeam": { "teamTricode": "DEN", "teamCity": "Denver", "teamName": "Nuggets",
-          "wins": 1, "losses": 2, "score": null, "periods": [] }
-      }
-    ]
-  }
+  "day": { "date": "2026-10-30" },
+  "events": [
+    {
+      "id": "401000001",
+      "status": { "period": 5, "type": { "state": "post", "shortDetail": "Final/OT" } },
+      "competitions": [{ "competitors": [
+        { "homeAway": "away", "team": { "abbreviation": "NY", "location": "New York", "name": "Knicks" },
+          "score": "112", "records": [{ "type": "total", "summary": "2-2" }],
+          "linescores": [{"value":25.0}, {"value":31.0}, {"value":27.0}, {"value":22.0}, {"value":7.0}] },
+        { "homeAway": "home", "team": { "abbreviation": "CLE", "location": "Cleveland", "name": "Cavaliers" },
+          "score": "118", "records": [{ "type": "home", "summary": "1-0" }, { "type": "total", "summary": "3-1" }],
+          "linescores": [{"value":28.0}, {"value":30.0}, {"value":25.0}, {"value":22.0}, {"value":13.0}] }
+      ] }]
+    },
+    {
+      "id": "401000002",
+      "status": { "period": 3, "type": { "state": "in", "shortDetail": "5:21 - 3rd" } },
+      "competitions": [{ "competitors": [
+        { "homeAway": "home", "team": { "abbreviation": "LAL", "location": "Los Angeles", "name": "Lakers" },
+          "score": "71", "records": [{ "type": "total", "summary": "1-3" }],
+          "linescores": [{"value":24.0}, {"value":29.0}, {"value":18.0}, {"value":0.0}] },
+        { "homeAway": "away", "team": { "abbreviation": "BOS", "location": "Boston", "name": "Celtics" },
+          "score": "80", "records": [{ "type": "total", "summary": "4-0" }],
+          "linescores": [{"value":30.0}, {"value":27.0}, {"value":23.0}, {"value":0.0}] }
+      ] }]
+    },
+    {
+      "id": "401000003",
+      "status": { "period": 0, "type": { "state": "pre", "shortDetail": "10/30 - 10:00 PM EDT" } },
+      "competitions": [{ "competitors": [
+        { "homeAway": "home", "team": { "abbreviation": "GS", "location": "Golden State", "name": "Warriors" },
+          "score": null, "records": [{ "type": "total", "summary": "2-1" }] },
+        { "homeAway": "away", "team": { "abbreviation": "DEN", "location": "Denver", "name": "Nuggets" },
+          "records": [{ "type": "total", "summary": "1-2" }] }
+      ] }]
+    }
+  ]
 }

@@ -1,11 +1,20 @@
 open Scoreboard
 
-let period_label n = if n <= 4 then string_of_int n else if n = 5 then "OT" else Printf.sprintf "%dOT" (n - 4)
-let cell s = Printf.sprintf "%4s" s
-let record t = Printf.sprintf "%d-%d" t.wins t.losses
+type tone = Plain | Heading | Label | Muted | Positive | Negative | Live | Value
+type span = { text : string; tone : tone }
+type document = span list list
 
-(* Live games carry zeroes for periods not played yet, so only show those
-   reached so far. *)
+let span ?(tone = Plain) text = { text; tone }
+let line_text line = String.concat "" (List.map (fun s -> s.text) line)
+let to_text document = String.concat "\n" (List.map line_text document)
+let title text = [span ~tone:Heading text]
+let rule width = [span ~tone:Muted (String.make width '-')]
+let period_label n =
+  if n <= 4 then string_of_int n
+  else if n = 5 then "OT"
+  else Printf.sprintf "%dOT" (n - 4)
+
+(* Only include periods reached so far, not future zero-filled quarters. *)
 let periods_played (g : game) =
   match g.status with
   | Scheduled -> 0
@@ -14,42 +23,83 @@ let periods_played (g : game) =
 
 let take n l = List.filteri (fun i _ -> i < n) l
 
-let team_line (g : game) (t : team) ~opponent =
+let game_document (g : game) =
   let played = periods_played g in
-  let scores = take played t.periods |> List.map (fun n -> cell (string_of_int n)) in
-  let total, marker =
+  let team_line (t : team) ~opponent =
+    let winner = g.status = Final && t.score > opponent.score in
+    let team_tone = if winner then Positive else Label in
+    let record = Printf.sprintf "%d-%d" t.wins t.losses in
+    let base = [span ~tone:team_tone (Printf.sprintf "%-4s" t.tricode);
+                span ~tone:Muted (Printf.sprintf "%6s" record)] in
+    if g.status = Scheduled then base
+    else
+      base
+      @ (take played t.periods |> List.map (fun n -> span (Printf.sprintf "%3d" n)))
+      @ [span ~tone:(if winner then Positive else Value) (Printf.sprintf " %4d" t.score)]
+      @ (if winner then [span ~tone:Positive " <"] else [])
+  in
+  let status =
     match g.status with
-    | Scheduled -> ("", "")
-    | Live -> (string_of_int t.score, "")
-    | Final -> (string_of_int t.score, if t.score > opponent.score then " <" else "")
+    | Live -> [span ~tone:Live ("LIVE  " ^ g.status_text)]
+    | Final -> [span ~tone:Muted g.status_text]
+    | Scheduled -> [span ~tone:Label g.status_text]
   in
-  Printf.sprintf "%-3s %7s%s %5s%s" t.tricode (record t) (String.concat "" scores) total marker
-
-let header_line (g : game) =
-  let played = periods_played g in
-  let labels = List.init played (fun i -> cell (period_label (i + 1))) in
-  if played = 0 then None
-  else Some (Printf.sprintf "%-3s %7s%s %5s" "" "" (String.concat "" labels) "T")
-
-let box lines =
-  let width = List.fold_left (fun w l -> max w (String.length l)) 0 lines in
-  let border = "+" ^ String.make (width + 2) '-' ^ "+" in
-  let pad l = "| " ^ l ^ String.make (width - String.length l) ' ' ^ " |" in
-  (border :: List.map pad lines) @ [ border ]
-
-let game (g : game) =
-  let lines =
-    [ g.status_text ]
-    @ Option.to_list (header_line g)
-    @ [ team_line g g.away ~opponent:g.home; team_line g g.home ~opponent:g.away ]
+  let columns =
+    if g.status = Scheduled then []
+    else [[span ~tone:Muted (Printf.sprintf "%-4s%6s" "TEAM" "W-L")]
+          @ List.init played (fun i -> span ~tone:Muted (Printf.sprintf "%3s" (period_label (i + 1))))
+          @ [span ~tone:Muted (Printf.sprintf " %4s" "TOT")]]
   in
-  box lines
+  [status] @ columns @ [team_line g.away ~opponent:g.home; team_line g.home ~opponent:g.away]
 
-let scoreboard (t : Scoreboard.t) =
-  let heading = Printf.sprintf "NBA SCORES  %s" t.date in
-  let body =
-    match t.games with
-    | [] -> [ "No games today." ]
-    | games -> List.concat_map (fun g -> game g @ [ "" ]) games
+let sections sections =
+  List.concat (List.mapi (fun i section -> if i = 0 then section else [] :: section) sections)
+
+let scoreboard_document (t : Scoreboard.t) =
+  [title (Printf.sprintf "NBA SCORES  %s" t.date); []]
+  @ (match t.games with
+     | [] -> [[span ~tone:Muted "No games today."]]
+     | games -> sections (List.map game_document games))
+
+let standings_document (t : Standings.t) =
+  let conference (c : Standings.conference) =
+    let header = Printf.sprintf "%2s %-4s %2s %2s %5s %4s %4s" "#" "TEAM" "W" "L" "PCT" "GB" "STRK" in
+    let rows = List.map (fun (e : Standings.entry) ->
+      let streak_tone =
+        if String.starts_with ~prefix:"W" e.streak then Positive
+        else if String.starts_with ~prefix:"L" e.streak then Negative
+        else Muted
+      in
+      [span ~tone:Muted (Printf.sprintf "%2d " e.seed);
+       span ~tone:Label (Printf.sprintf "%-4s" e.team);
+       span (Printf.sprintf " %2s %2s" e.wins e.losses);
+       span ~tone:Value (Printf.sprintf " %5s" e.percentage);
+       span ~tone:Muted (Printf.sprintf " %4s " e.behind);
+       span ~tone:streak_tone (Printf.sprintf "%4s" e.streak)]) c.entries
+    in
+    [title c.name; [span ~tone:Muted header]; rule (String.length header)]
+    @ (if rows = [] then [[span ~tone:Muted "No standings available."]] else rows)
   in
-  String.concat "\n" (heading :: "" :: body)
+  [title (Printf.sprintf "NBA STANDINGS  %s" t.season); []]
+  @ (if t.conferences = [] then [[span ~tone:Muted "No standings available."]]
+     else sections (List.map conference t.conferences))
+
+let leaders_document (t : Leaders.t) =
+  let category (c : Leaders.category) =
+    let width = List.fold_left (fun n (p : Leaders.player) -> max n (String.length p.name)) 6 c.players in
+    let header = Printf.sprintf "%-*s %-4s %5s" width "PLAYER" "TEAM" c.abbreviation in
+    let rows = List.map (fun (p : Leaders.player) ->
+      [span ~tone:Label (Printf.sprintf "%-*s" width p.name);
+       span ~tone:Muted (Printf.sprintf " %-4s" p.team);
+       span ~tone:Value (Printf.sprintf " %5s" p.value)]) c.players
+    in
+    [title c.name; [span ~tone:Muted header]; rule (String.length header)]
+    @ (if rows = [] then [[span ~tone:Muted "No leaders available."]] else rows)
+  in
+  [title (Printf.sprintf "NBA SEASON LEADERS  %s" t.season); []]
+  @ sections (List.map category t.categories)
+
+let game g = List.map line_text (game_document g)
+let scoreboard t = to_text (scoreboard_document t)
+let standings t = to_text (standings_document t)
+let leaders t = to_text (leaders_document t)
