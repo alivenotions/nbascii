@@ -5,6 +5,12 @@ type span = { text : string; tone : tone }
 type document = span list list
 
 val to_text : document -> string
+
+val stale_note : age:float -> string
+(** E.g. ["Showing data from 12 min ago; ESPN isn't responding."] *)
+
+val with_note : string -> document -> document
+(** Adds a muted line under the document's heading. *)
 val game_document : Scoreboard.game -> document
 val scoreboard_document : Scoreboard.t -> document
 val standings_document : Standings.t -> document
