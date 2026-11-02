@@ -125,3 +125,4 @@ let of_string ?date s =
   | exception Yojson.Json_error msg -> fail "Scoreboard: invalid JSON: %s" msg
 
 let finished t = List.for_all (fun g -> g.status = Final) t.games
+let live t = List.exists (fun g -> g.status = Live) t.games

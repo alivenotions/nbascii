@@ -33,6 +33,9 @@ val finished : t -> bool
 (** Every game is over, including postponed or cancelled ones, which ESPN
     also reports as final. True for a day without games. *)
 
+val live : t -> bool
+(** At least one game is in progress. *)
+
 val of_json : ?date:string -> Yojson.Safe.t -> t
 (** Raises [Failure] if the JSON doesn't look like a scoreboard. *)
 

@@ -62,8 +62,16 @@ let test_semantic_colors () =
   let page = Nbascii_web.Page.render_document ~path:"/" injected |> Pure_html.to_string in
   check "semantic text escaped" (contains page "&lt;script&gt;&amp;")
 
+let test_refresh () =
+  let doc = [ [ { Nbascii.Render.text = "NBA SCORES"; tone = Heading } ] ] in
+  let page = Nbascii_web.Page.render_document ~refresh:30 ~path:"/" doc |> Pure_html.to_string in
+  check "auto-reload tag" (contains page "http-equiv=\"refresh\"" && contains page "content=\"30\"");
+  let page = Nbascii_web.Page.render_document ~path:"/" doc |> Pure_html.to_string in
+  check "no auto-reload by default" (not (contains page "http-equiv"))
+
 let () =
   test_semantic_colors ();
+  test_refresh ();
   let text = "NBA SCORES  2026-11-01\n\n+----------+\n| Final    |\n| BOS  100 |\n+----------+\n" in
   let page = html "/" text in
   check "ASCII spacing unchanged" (strip_tags (pre_content page) = text);

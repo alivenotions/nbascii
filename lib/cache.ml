@@ -7,7 +7,10 @@ type 'a entry = { value : 'a; fetched_at : float; final : bool }
 type 'a t = {
   sw : Eio.Switch.t;
   now : unit -> float;
+  sleep : float -> unit;
   ttl : float;
+  max_age : float;
+  max_wait : float;
   retry_after : float;
   final : 'a -> bool;
   fetch : unit -> 'a;
@@ -20,11 +23,15 @@ type 'a reading = { value : 'a; age : float; stale : bool }
 
 let seconds mtime = Int64.to_float (Mtime.to_uint64_ns mtime) /. 1e9
 
-let create ~sw ~clock ~ttl ?(retry_after = 30.0) ?(final = fun _ -> false) fetch =
+let create ~sw ~clock ~ttl ?(max_age = infinity) ?(max_wait = 2.0) ?(retry_after = 30.0)
+    ?(final = fun _ -> false) fetch =
   {
     sw;
     now = (fun () -> seconds (Eio.Time.Mono.now clock));
+    sleep = Eio.Time.Mono.sleep clock;
     ttl;
+    max_age;
+    max_wait;
     retry_after;
     final;
     fetch;
@@ -73,16 +80,26 @@ let reading t (entry : _ entry) =
     stale =
       (match t.failure with
       | Some (failed_at, _) -> failed_at >= entry.fetched_at
-      | None -> false);
+      | None -> false)
+      || ((not entry.final) && t.now () -. entry.fetched_at >= t.max_age);
   }
 
 let read t =
   match t.entry with
   | Some entry ->
-      let expired = (not entry.final) && t.now () -. entry.fetched_at >= t.ttl in
+      let age = t.now () -. entry.fetched_at in
+      let expired = (not entry.final) && age >= t.ttl in
       if expired && Option.is_none t.in_flight && not (backing_off t) then
         ignore (start_fetch t);
-      (* A fetch that finished without blocking may have replaced [entry]. *)
+      (* Too old to show without trying for something newer first. A failed
+         or slow fetch still falls back to [entry]. *)
+      (match t.in_flight with
+      | Some promise when (not entry.final) && age >= t.max_age ->
+          Eio.Fiber.first
+            (fun () -> ignore (Eio.Promise.await promise))
+            (fun () -> t.sleep t.max_wait)
+      | _ -> ());
+      (* A fetch that finished in the meantime may have replaced [entry]. *)
       reading t (Option.value t.entry ~default:entry)
   | None -> (
       match t.failure with
@@ -100,9 +117,11 @@ module Keyed = struct
     mutable current : ('k * 'a t) option;
   }
 
-  let create ~sw ~clock ~ttl ?retry_after ?final fetch =
+  let create ~sw ~clock ~ttl ?max_age ?max_wait ?retry_after ?final fetch =
     {
-      make = (fun key -> create ~sw ~clock ~ttl ?retry_after ?final (fun () -> fetch key));
+      make =
+        (fun key ->
+          create ~sw ~clock ~ttl ?max_age ?max_wait ?retry_after ?final (fun () -> fetch key));
       current = None;
     }
 
