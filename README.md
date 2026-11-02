@@ -5,7 +5,7 @@ Quick NBA scores, in ASCII. Written in direct-style OCaml 5 on [Eio](https://git
 ## Layout
 
 - `bin/` – the web app
-- `lib/` – fetching and parsing scores (`Nba_api`, `Scoreboard`), the ASCII
+- `lib/` – fetching and parsing scores (`Espn_api`, `Scoreboard`), the ASCII
   boxes (`Render`), and a small refresh cache (`Cache`)
 - `dream_eio/` – a small Dream-style web framework on Eio and cohttp-eio
   (router, `:param` and `**` routes, scopes, middleware, logger, static files)

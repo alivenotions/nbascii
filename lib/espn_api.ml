@@ -23,12 +23,12 @@ let https () =
   let authenticator =
     match Ca_certs.authenticator () with
     | Ok a -> a
-    | Error (`Msg msg) -> failwith ("Nba_api: loading CA certificates: " ^ msg)
+    | Error (`Msg msg) -> failwith ("Espn_api: loading CA certificates: " ^ msg)
   in
   let config =
     match Tls.Config.client ~authenticator () with
     | Ok c -> c
-    | Error (`Msg msg) -> failwith ("Nba_api: TLS config: " ^ msg)
+    | Error (`Msg msg) -> failwith ("Espn_api: TLS config: " ^ msg)
   in
   fun uri raw ->
     let host =
@@ -44,7 +44,7 @@ let get_string client uri =
   match Http.Response.status resp with
   | `OK -> Eio.Buf_read.(parse_exn take_all) ~max_size:(10 * 1024 * 1024) body
   | status ->
-      Printf.ksprintf failwith "Nba_api: %s returned %s" (Uri.to_string uri)
+      Printf.ksprintf failwith "Espn_api: %s returned %s" (Uri.to_string uri)
         (Http.Status.to_string status)
 
 let todays_scoreboard client ~clock =
