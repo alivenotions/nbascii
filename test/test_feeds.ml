@@ -34,7 +34,7 @@ let test_dates () =
     ["2026-02-29"; "2026-13-01"; "2026-04-31"; "2026-1-01"; "nonsense"];
   check "query date" (espn_query "2026-10-31" = "20261031");
   check "dated scoreboard URL"
-    (Uri.get_query_param (Nbascii.Nba_api.scoreboard_url_for_date "2026-10-31") "dates" = Some "20261031")
+    (Uri.get_query_param (Nbascii.Espn_api.scoreboard_url_for_date "2026-10-31") "dates" = Some "20261031")
 
 let test_dated_scores () =
   let json = Yojson.Safe.from_string (read "scoreboard.json") in
