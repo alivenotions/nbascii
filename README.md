@@ -55,11 +55,16 @@ The app uses ESPN's public endpoints; no API key is needed:
 
 These endpoints are undocumented and have no stability guarantee.
 
-Each page has its own in-memory cache. Only a page's first request waits for
-ESPN: after that, expired data is served immediately while a background fetch
-replaces it. If a fetch fails, the page keeps serving its last good data with
-a note saying how old it is, and ESPN isn't asked again for 30 seconds. With
-no data yet, the page returns 503 until a fetch succeeds.
+Each page has its own in-memory cache. Expired data is served immediately
+while a background fetch replaces it. Requests wait only for a page's first
+load, or when its data is past a maximum age (1 minute for scores, 15 minutes
+for standings and stats, e.g. after nobody has visited for a while); then they
+wait up to 2 seconds for fresh data before falling back. If a fetch fails or
+is too slow, the page shows its last good data with a note saying how old it
+is, and a failed fetch isn't retried for 30 seconds. With no data yet, the
+page returns 503 until a fetch succeeds.
+
+While a game is live, the score pages reload themselves every 30 seconds.
 
 Standings follow ESPN's conference seeds;
 leaders use ESPN's rankings and season labels.

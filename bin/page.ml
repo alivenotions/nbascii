@@ -41,7 +41,7 @@ let document_nodes (document : Nbascii.Render.document) =
     @ List.map (fun (s : Nbascii.Render.span) ->
       span [class_ "%s" (tone_class s.tone)] [txt "%s" s.text]) line) document)
 
-let layout ~path nodes =
+let layout ?refresh ~path nodes =
   let nav_link url label =
     let attrs = if path = url then [href "%s" url; Aria.current `page] else [href "%s" url] in
     a attrs [txt "%s" label]
@@ -50,6 +50,9 @@ let layout ~path nodes =
     head [] [
       meta [charset "utf-8"];
       meta [name "viewport"; content "width=device-width, initial-scale=1"];
+      (match refresh with
+       | Some seconds -> meta [http_equiv `refresh; content "%d" seconds]
+       | None -> null []);
       title [] "nbascii";
       link [rel "stylesheet"; href "/static/main.css"];
       link [rel "preconnect"; href "https://fonts.googleapis.com/"];
@@ -70,4 +73,4 @@ let layout ~path nodes =
   ]
 
 let render ~path text = layout ~path (ascii text)
-let render_document ~path document = layout ~path (document_nodes document)
+let render_document ?refresh ~path document = layout ?refresh ~path (document_nodes document)

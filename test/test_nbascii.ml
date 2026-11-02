@@ -243,6 +243,70 @@ let test_cache () =
   check "keyed final" ((Cache.Keyed.read keyed "a").value = "a!" && !keyed_calls = 1);
   check "new key fetches" ((Cache.Keyed.read keyed "b").value = "b!" && !keyed_calls = 2)
 
+let test_max_age () =
+  let module Cache = Nbascii.Cache in
+  Eio_mock.Backend.run @@ fun () ->
+  Eio.Switch.run @@ fun sw ->
+  let clock = Eio_mock.Clock.Mono.make () in
+  let at s = Eio_mock.Clock.Mono.set_time clock (Mtime.of_uint64_ns (Int64.of_float (s *. 1e9))) in
+  let calls = ref 0 and fail = ref false and gate = ref None in
+  let fetch () =
+    incr calls;
+    Option.iter Eio.Promise.await !gate;
+    if !fail then failwith "upstream down";
+    !calls
+  in
+  let blocked () =
+    let release, resolve = Eio.Promise.create () in
+    gate := Some release;
+    fun () -> gate := None; Eio.Promise.resolve resolve ()
+  in
+  let cache = Cache.create ~sw ~clock ~ttl:20.0 ~max_age:60.0 ~max_wait:2.0 fetch in
+  check "loaded" (Cache.get cache = 1);
+
+  (* Expired but under max_age: old value at once, as before. *)
+  at 30.0;
+  let release = blocked () in
+  let r = Cache.read cache in
+  check "under max_age doesn't wait" (r.value = 1 && not r.stale);
+  release ();
+  Eio.Fiber.yield ();
+  check "refreshed" (Cache.get cache = 2);
+
+  (* Over max_age: the read waits, and gets the new value if it arrives. *)
+  at 100.0;
+  let release = blocked () in
+  let r = ref None in
+  Eio.Fiber.both (fun () -> r := Some (Cache.read cache)) release;
+  (match !r with
+   | Some r -> check "waited for fresh value" (r.value = 3 && not r.stale)
+   | None -> check "read finished" false);
+
+  (* Over max_age and ESPN is slow: give up after max_wait, mark stale. *)
+  at 200.0;
+  let release = blocked () in
+  let r = ref None in
+  Eio.Fiber.both (fun () -> r := Some (Cache.read cache)) (fun () -> Eio_mock.Clock.Mono.advance clock);
+  (match !r with
+   | Some r -> check "gave up after max_wait" (r.value = 3 && r.stale && r.age = 102.0)
+   | None -> check "read finished" false);
+  release ();
+  Eio.Fiber.yield ();
+  check "late refresh still lands" (Cache.get cache = 4);
+
+  (* Over max_age and the fetch fails at once: old value, stale, no wait. *)
+  fail := true;
+  at 300.0;
+  let r = Cache.read cache in
+  check "failure falls back" (r.value = 4 && r.stale && !calls = 5);
+
+  (* A final value never waits, however old. *)
+  let frozen = Cache.create ~sw ~clock ~ttl:20.0 ~max_age:60.0 ~final:(fun _ -> true) (fun () -> "done") in
+  check "final loaded" (Cache.get frozen = "done");
+  at 10_000.0;
+  let r = Cache.read frozen in
+  check "final never stale" (r.value = "done" && not r.stale)
+
 let test_stale_note () =
   let module R = Nbascii.Render in
   check "seconds" (R.stale_note ~age:42.0 = "Showing data from 42 s ago; ESPN isn't responding.");
@@ -258,7 +322,9 @@ let test_finished () =
   check "fixture has unfinished games" (not (S.finished board));
   check "all final"
     (S.finished { board with games = List.filter (fun (g : S.game) -> g.status = Final) board.games });
-  check "no games" (S.finished { board with games = [] })
+  check "no games" (S.finished { board with games = [] });
+  check "fixture has a live game" (S.live board);
+  check "no live games" (not (S.live { board with games = [] }))
 
 let () =
   Logs.set_level None;
@@ -266,6 +332,7 @@ let () =
   test_scoreboard_errors ();
   test_espn_edge_cases ();
   test_cache ();
+  test_max_age ();
   test_stale_note ();
   test_finished ();
   test_scoreboard ();
