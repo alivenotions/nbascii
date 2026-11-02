@@ -1,7 +1,7 @@
 (test
  (name test_nbascii)
  (modules test_nbascii)
- (libraries nbascii dream_eio eio_main eio.mock)
+ (libraries nbascii dream_eio eio_main eio.mock mtime)
  (deps scoreboard.json))
 
 (test

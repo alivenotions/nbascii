@@ -1,50 +1,67 @@
 module Dream = Dream_eio
+module Cache = Nbascii.Cache
 
 let page = Nbascii_web.Page.render
 
 let respond_html ?status node = Dream.html ?status (Pure_html.to_string node)
 
-let cached_page ~label ~render cache req =
+let cached_page ~label ~render read req =
   let path = "/" ^ String.concat "/" (Dream.path req) in
-  let page = page ~path in
-  match Nbascii.Cache.get cache with
-  | data -> respond_html (Nbascii_web.Page.render_document ~path (render data))
+  match read () with
+  | ({ value; age; stale } : _ Cache.reading) ->
+      let document = render value in
+      let document =
+        if stale then Nbascii.Render.with_note (Nbascii.Render.stale_note ~age) document
+        else document
+      in
+      respond_html (Nbascii_web.Page.render_document ~path document)
   | exception (Eio.Cancel.Cancelled _ as exn) -> raise exn
   | exception exn ->
       Logs.err (fun m -> m "Fetching %s failed: %s" label (Printexc.to_string exn));
       respond_html ~status:`Service_unavailable
-        (page (Printf.sprintf "Couldn't load %s. Try again in a moment." label))
+        (page ~path (Printf.sprintf "Couldn't load %s. Try again in a moment." label))
 
 let () =
   Dream.setup_log ();
   Mirage_crypto_rng_unix.use_default ();
   Eio_main.run @@ fun env ->
+  Eio.Switch.run @@ fun sw ->
   let clock = Eio.Stdenv.clock env in
+  let mono = Eio.Stdenv.mono_clock env in
   let net = Eio.Stdenv.net env in
   let static = Eio.Path.(Eio.Stdenv.cwd env / "static") in
   let client = Nbascii.Espn_api.make_client ~net in
-  let cache =
-    Nbascii.Cache.create ~clock ~ttl:20.0 (fun () ->
+  let today =
+    Cache.create ~sw ~clock:mono ~ttl:20.0 (fun () ->
         Nbascii.Espn_api.todays_scoreboard client ~clock)
   in
+  (* Keyed by date, so it moves on when today's date rolls over, and frozen
+     once all of that day's games have finished. *)
   let yesterday =
-    Nbascii.Cache.create ~clock ~ttl:20.0 (fun () ->
-      let today = Nbascii.Cache.get cache in
-      let date = Nbascii.Score_date.previous today.date in
-      Nbascii.Espn_api.scoreboard_on client ~clock ~date)
+    Cache.Keyed.create ~sw ~clock:mono ~ttl:20.0 ~final:Nbascii.Scoreboard.finished
+      (fun date -> Nbascii.Espn_api.scoreboard_on client ~clock ~date)
+  in
+  let read_yesterday () =
+    let date = Nbascii.Score_date.previous (Cache.get today).date in
+    Cache.Keyed.read yesterday date
   in
   let standings =
-    Nbascii.Cache.create ~clock ~ttl:300.0 (fun () -> Nbascii.Espn_api.standings client ~clock)
+    Cache.create ~sw ~clock:mono ~ttl:300.0 (fun () -> Nbascii.Espn_api.standings client ~clock)
   in
   let leaders =
-    Nbascii.Cache.create ~clock ~ttl:300.0 (fun () -> Nbascii.Espn_api.leaders client ~clock)
+    Cache.create ~sw ~clock:mono ~ttl:300.0 (fun () -> Nbascii.Espn_api.leaders client ~clock)
   in
+  let render = Nbascii.Render.scoreboard_document in
   Dream.run ~net
   @@ Dream.logger ~clock
   @@ Dream.router [
-    Dream.get "/" (cached_page ~label:"today's scores" ~render:Nbascii.Render.scoreboard_document cache);
-    Dream.get "/yesterday" (cached_page ~label:"yesterday's scores" ~render:Nbascii.Render.scoreboard_document yesterday);
-    Dream.get "/standings" (cached_page ~label:"standings" ~render:Nbascii.Render.standings_document standings);
-    Dream.get "/stats" (cached_page ~label:"season leaders" ~render:Nbascii.Render.leaders_document leaders);
+    Dream.get "/" (cached_page ~label:"today's scores" ~render (fun () -> Cache.read today));
+    Dream.get "/yesterday" (cached_page ~label:"yesterday's scores" ~render read_yesterday);
+    Dream.get "/standings"
+      (cached_page ~label:"standings" ~render:Nbascii.Render.standings_document
+         (fun () -> Cache.read standings));
+    Dream.get "/stats"
+      (cached_page ~label:"season leaders" ~render:Nbascii.Render.leaders_document
+         (fun () -> Cache.read leaders));
     Dream.get "/static/**" (Dream.static static);
   ]

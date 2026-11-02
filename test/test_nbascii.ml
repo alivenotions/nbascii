@@ -156,26 +156,109 @@ let test_espn_edge_cases () =
       ("type", `String "total"); ("summary", `String "bad") ] ])]; away]))
 
 let test_cache () =
+  let module Cache = Nbascii.Cache in
   Eio_mock.Backend.run @@ fun () ->
-  let clock = Eio_mock.Clock.make () in
-  let calls = ref 0 and fail = ref false in
-  let cache =
-    Nbascii.Cache.create ~clock ~ttl:20.0 (fun () ->
-        incr calls;
-        if !fail then failwith "upstream down";
-        !calls)
+  Eio.Switch.run @@ fun sw ->
+  let clock = Eio_mock.Clock.Mono.make () in
+  let at s = Eio_mock.Clock.Mono.set_time clock (Mtime.of_uint64_ns (Int64.of_float (s *. 1e9))) in
+  let raises f = match f () with _ -> false | exception Failure _ -> true in
+  (* [fetch] returns call numbers; [gate], when set, blocks it until resolved. *)
+  let calls = ref 0 and fail = ref false and gate = ref None in
+  let fetch () =
+    incr calls;
+    Option.iter Eio.Promise.await !gate;
+    if !fail then failwith "upstream down";
+    !calls
   in
-  check "first fetch" (Nbascii.Cache.get cache = 1);
-  check "cached" (Nbascii.Cache.get cache = 1 && !calls = 1);
-  Eio_mock.Clock.set_time clock 21.0;
-  check "refetched after ttl" (Nbascii.Cache.get cache = 2);
+  let cache = Cache.create ~sw ~clock ~ttl:20.0 ~retry_after:30.0 fetch in
+  check "lazy" (!calls = 0);
+  check "first fetch" (Cache.get cache = 1);
+  check "cached" (Cache.get cache = 1 && !calls = 1);
+
+  (* Expired: the old value comes back at once while the refresh is blocked. *)
+  at 21.0;
+  let release, resolve = Eio.Promise.create () in
+  gate := Some release;
+  let r = Cache.read cache in
+  check "no wait on refresh" (r.value = 1 && (not r.stale) && !calls = 2);
+  check "one refresh at a time" (Cache.get cache = 1 && !calls = 2);
+  gate := None;
+  Eio.Promise.resolve resolve ();
+  Eio.Fiber.yield ();
+  check "refreshed value" (Cache.get cache = 2);
+
+  (* A failed refresh keeps the old value, marks it stale, and backs off. *)
   fail := true;
-  Eio_mock.Clock.set_time clock 42.0;
-  check "stale on error" (Nbascii.Cache.get cache = 2 && !calls = 3);
-  check "still usable after error" (Nbascii.Cache.get cache = 2 && !calls = 4);
-  let empty = Nbascii.Cache.create ~clock ~ttl:20.0 (fun () -> failwith "down") in
-  check "error without value"
-    (match Nbascii.Cache.get empty with _ -> false | exception Failure _ -> true)
+  at 42.0;
+  check "refresh started" (Cache.get cache = 2 && !calls = 3);
+  let r = Cache.read cache in
+  check "stale after failure" (r.value = 2 && r.stale && r.age = 21.0);
+  at 60.0;
+  check "backing off" (Cache.get cache = 2 && !calls = 3);
+  at 73.0;
+  check "retried after backoff" (Cache.get cache = 2 && !calls = 4);
+  fail := false;
+  at 104.0;
+  ignore (Cache.get cache);
+  let r = Cache.read cache in
+  check "recovered" (r.value = 5 && not r.stale);
+
+  (* Nothing loaded yet: the error is raised, then re-raised without
+     refetching until the backoff ends. *)
+  let attempts = ref 0 in
+  let empty = Cache.create ~sw ~clock ~ttl:20.0 ~retry_after:30.0 (fun () -> incr attempts; failwith "down") in
+  check "error without value" (raises (fun () -> Cache.get empty) && !attempts = 1);
+  check "fails fast while backing off" (raises (fun () -> Cache.get empty) && !attempts = 1);
+  at 140.0;
+  check "retries after backoff" (raises (fun () -> Cache.get empty) && !attempts = 2);
+
+  (* Concurrent first reads share one fetch. *)
+  let shared_calls = ref 0 and release, resolve = Eio.Promise.create () in
+  let shared = Cache.create ~sw ~clock ~ttl:20.0 (fun () -> incr shared_calls; Eio.Promise.await release; "v") in
+  let results = ref [] in
+  Eio.Fiber.all [
+    (fun () -> let v = Cache.get shared in results := v :: !results);
+    (fun () -> let v = Cache.get shared in results := v :: !results);
+    (fun () -> Eio.Promise.resolve resolve ());
+  ];
+  check "shared first fetch" (!results = [ "v"; "v" ] && !shared_calls = 1);
+
+  (* A final value is never refreshed. *)
+  let final_calls = ref 0 in
+  let frozen = Cache.create ~sw ~clock ~ttl:20.0 ~final:(fun v -> v >= 2) (fun () -> incr final_calls; !final_calls) in
+  check "not final yet" (Cache.get frozen = 1);
+  at 200.0;
+  ignore (Cache.get frozen);
+  check "became final" (Cache.get frozen = 2);
+  at 10_000.0;
+  check "final never refreshed" (Cache.get frozen = 2 && !final_calls = 2);
+
+  (* Keyed: one cache per key, replaced when the key changes. *)
+  let keyed_calls = ref 0 in
+  let keyed =
+    Cache.Keyed.create ~sw ~clock ~ttl:20.0 ~final:(fun _ -> true) (fun key -> incr keyed_calls; key ^ "!")
+  in
+  check "keyed fetch" ((Cache.Keyed.read keyed "a").value = "a!");
+  at 20_000.0;
+  check "keyed final" ((Cache.Keyed.read keyed "a").value = "a!" && !keyed_calls = 1);
+  check "new key fetches" ((Cache.Keyed.read keyed "b").value = "b!" && !keyed_calls = 2)
+
+let test_stale_note () =
+  let module R = Nbascii.Render in
+  check "seconds" (R.stale_note ~age:42.0 = "Showing data from 42 s ago; ESPN isn't responding.");
+  check "minutes" (R.stale_note ~age:720.0 = "Showing data from 12 min ago; ESPN isn't responding.");
+  check "hours" (R.stale_note ~age:7200.0 = "Showing data from 2 h ago; ESPN isn't responding.");
+  let doc = [ [ { R.text = "HEAD"; tone = Heading } ]; [ { R.text = "body"; tone = Plain } ] ] in
+  check "note under heading"
+    (R.to_text (R.with_note "note" doc) = "HEAD\nnote\nbody")
+
+let test_finished () =
+  let module S = Nbascii.Scoreboard in
+  let board = S.of_string (In_channel.with_open_bin "scoreboard.json" In_channel.input_all) in
+  check "fixture has unfinished games" (not (S.finished board));
+  check "all final"
+    (S.finished { board with games = List.filter (fun (g : S.game) -> g.status = Final) board.games });
+  check "no games" (S.finished { board with games = [] })
 
 let () =
   Logs.set_level None;
@@ -183,6 +266,8 @@ let () =
   test_scoreboard_errors ();
   test_espn_edge_cases ();
   test_cache ();
+  test_stale_note ();
+  test_finished ();
   test_scoreboard ();
   Eio_main.run @@ fun env ->
   test_static env;

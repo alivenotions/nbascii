@@ -103,3 +103,15 @@ let game g = List.map line_text (game_document g)
 let scoreboard t = to_text (scoreboard_document t)
 let standings t = to_text (standings_document t)
 let leaders t = to_text (leaders_document t)
+
+let stale_note ~age =
+  let age =
+    if age < 60. then Printf.sprintf "%.0f s" age
+    else if age < 3600. then Printf.sprintf "%.0f min" (age /. 60.)
+    else Printf.sprintf "%.0f h" (age /. 3600.)
+  in
+  Printf.sprintf "Showing data from %s ago; ESPN isn't responding." age
+
+let with_note note = function
+  | [] -> [ [ { text = note; tone = Muted } ] ]
+  | heading :: rest -> heading :: [ { text = note; tone = Muted } ] :: rest
